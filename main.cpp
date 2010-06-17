@@ -172,7 +172,8 @@ protected:
             Poco::TaskManager tm;
             // Start observer thread
             for (size_t i = 0, count = data.sites().size(); i < count; ++i)
-                tm.start(new BackupTask(data.sites()[i], _batch));
+                try { tm.start(new BackupTask(data.sites()[i], _batch)); }
+                catch (...) { }
             tm.joinAll();
         }
         return EXIT_OK;
