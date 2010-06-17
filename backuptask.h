@@ -34,6 +34,8 @@ private:
     void writeLog(const std::string& msg);
     void writeLog(const std::string& msg, const Poco::Any& arg);
 
+    void reconnect();
+
     static std::string backupDir();
 
 private:

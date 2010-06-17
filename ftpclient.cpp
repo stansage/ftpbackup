@@ -138,6 +138,7 @@ BackupTask::FtpClient *BackupTask::FtpClient::createConnect()
 {
     static std::string host;
     static Poco::UInt16 port = 0;
+    static int timeout = 0;
     static Poco::FastMutex mutex;
 
     if (!port) { // parse properties once
@@ -147,7 +148,12 @@ BackupTask::FtpClient *BackupTask::FtpClient::createConnect()
             throw Poco::ApplicationException("Invalid ftp config property");
         host = tok[0];
         port = 2 == tok.count() ? Poco::NumberParser::parse(tok[1]) : FTPClientSession::FTP_PORT;
+
+        timeout = Poco::NumberParser::parse(App::config("ftp.timeout", "0"));
     }
 
-    return new FtpClient(host, port);
+    FtpClient *ret = new FtpClient(host, port);
+    if (timeout)
+        ret->setTimeout(timeout);
+    return ret;
 }

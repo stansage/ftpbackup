@@ -20,8 +20,7 @@ BackupTask::BackupTask(Data::Site::Ptr_t site, StrListPtr_t batch) :
 {
     ASSERT_LOG(0 != site.get())
     writeLog("Connecting to ftp server");
-    _ftp = FtpClient::createConnect();
-    _ftp->login(_site->login, _site->password);
+    reconnect();
 }
 
 BackupTask::~BackupTask()
@@ -298,8 +297,7 @@ void BackupTask::listFtpFiles(Output_t& files, const std::string& path, bool sto
     } catch (Poco::Net::FTPException& ex) {
         if (stopOnFail)
             ex.rethrow();
-        _ftp = FtpClient::createConnect();
-        _ftp->login(_site->login, _site->password);
+        reconnect();
         listFtpFiles(files, path, true);
     }
 }
@@ -390,6 +388,12 @@ void BackupTask::writeLog(const std::string& msg)
 void BackupTask::writeLog(const std::string& msg, const Poco::Any& arg)
 {
     App::logger().information(Poco::format("Site(%u) " + msg, _site->id, arg));
+}
+
+void BackupTask::reconnect()
+{
+    _ftp = FtpClient::createConnect();
+    _ftp->login(_site->login, _site->password);
 }
 
 std::string BackupTask::backupDir()
