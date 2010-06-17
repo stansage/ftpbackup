@@ -50,7 +50,8 @@ bool BackupTask::FtpClient::hasFeature(Feature feature)
         sendCommand("FEAT", response);
         _features.resize(FeatureCount);
         for (size_t i = 0, count = _features.size(); i < count; ++i)
-            _features[i] = std::string::npos != response.find_first_of(commands[i]);
+            _features[i] = !commands[i].empty() &&
+                           std::string::npos != response.find(commands[i]);
     }
     return _features[feature];
 }

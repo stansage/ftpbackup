@@ -44,7 +44,7 @@ void BackupTask::runTask()
         }
 
         // Retrieve file list from ftp server
-        Output_t ftpFiles;
+        Listing_t ftpFiles;
         listFtpFiles(ftpFiles);
 
         // Retrieve file list from database
@@ -65,7 +65,7 @@ void BackupTask::runTask()
         // Enumerate ftpFiles
         bool hasFiles = false;
         SearchMap_t::const_iterator send = search.end();
-        for (Output_t::iterator it = ftpFiles.begin(), end = ftpFiles.end(); it != end; ++it)
+        for (Listing_t::iterator it = ftpFiles.begin(), end = ftpFiles.end(); it != end; ++it)
         {
             Data::File::Ptr_t ftpFile = *it;
             SearchMap_t::iterator sit = search.find(ftpFile->fullName);
@@ -172,7 +172,7 @@ void BackupTask::restore(Data::Site::Ptr_t site, Poco::DateTime dt)
     }
 
     // Group files by archive name (File::modifyDate) and skip deleted
-    typedef std::map<Data::TimePoint_t, Output_t> Archives_t;
+    typedef std::map<Data::TimePoint_t, Listing_t> Archives_t;
     Archives_t archives;
     size_t total = 0; // files count minus skipped items
     for (Files_t::const_iterator it = files.begin(), end = files.end(); it != end; ++it)
@@ -196,7 +196,7 @@ void BackupTask::restore(Data::Site::Ptr_t site, Poco::DateTime dt)
         // List files to be extracted
         Poco::File flist(Poco::format("%s/%?u.flist", bdir, ait->first));
         Poco::FileOutputStream fos(flist.path()); // save list of fullNames to file on disk
-        for (Output_t::const_iterator fit = ait->second.begin(), fend = ait->second.end(); fit != fend; ++fit)
+        for (Listing_t::const_iterator fit = ait->second.begin(), fend = ait->second.end(); fit != fend; ++fit)
         {
             Data::File::Ptr_t file = *fit;
             if (!file->isDirectory)
@@ -255,7 +255,7 @@ bool BackupTask::processBatch()
     return true;
 }
 
-void BackupTask::listFtpFiles(Output_t& files, const std::string& path, bool stopOnFail)
+void BackupTask::listFtpFiles(Listing_t& files, const std::string& path, bool stopOnFail)
 {
     if (testIgnore(Data::Ignore::AttributePath, path))
         return; // skip directory by full path
@@ -271,16 +271,13 @@ void BackupTask::listFtpFiles(Output_t& files, const std::string& path, bool sto
         }
 
         // Fill buffer implement two modes
-        _buffer.clear();
-        if (_ftp->hasFeature(FtpClient::MLSD))
-            makeBufferMLSD(path);
-        else
-            makeBufferDefault(path);
+        Listing_t listing = _ftp->hasFeature(FtpClient::MLSD)
+                           ? makeBufferMLSD(path) : makeBufferDefault(path);
 
         // Recursively list all directories
-        for (size_t i = 0, count =_buffer.size(); i < count; ++i)
+        for (Listing_t::iterator it = listing.begin(), end = listing.end(); it != end; ++it)
         {
-            Data::File::Ptr_t file = _buffer[i];
+            Data::File::Ptr_t file = *it;
             if (file->fullName.empty()) {
                 App::logger().warning("File has empty name, why!?");
                 continue;
@@ -295,16 +292,21 @@ void BackupTask::listFtpFiles(Output_t& files, const std::string& path, bool sto
         if (!path.empty()) // on exit restore previous
             _ftp->cdup();
     } catch (Poco::Net::FTPException& ex) {
-        if (stopOnFail)
-            ex.rethrow();
+        if (stopOnFail) ex.rethrow();
+
+        writeLog("Trying reconnect on FTPException " + ex.displayText());
         reconnect();
-        listFtpFiles(files, path, true);
+        Poco::Path dir(path); // restore current work path
+        for (int i = 0, count = dir.depth(); i < count; ++i)
+            _ftp->setWorkingDirectory(dir[i]);
+        listFtpFiles(files, path, true); // once recursive call
     }
 }
 
-void BackupTask::makeBufferMLSD(const std::string& path)
+BackupTask::Listing_t BackupTask::makeBufferMLSD(const std::string& path)
 {
     if (path.empty()) writeLog("Enabled MLSD mode");
+    Listing_t ret;
 
     std::string line;
     std::istream& istream = _ftp->beginMLSD();
@@ -332,16 +334,18 @@ void BackupTask::makeBufferMLSD(const std::string& path)
         if ("pdir" == type || "cdir" == type)
             continue; // allready skipped above
 
-        _buffer.push_back(_site->createFile(
+        ret.push_back(_site->createFile(
             path + Poco::Path::separator() + fname,
             keyValue["modify"], "dir" == type));
     }
     _ftp->endMLSD();
+    return ret;
 }
 
-void BackupTask::makeBufferDefault(const std::string& path)
+BackupTask::Listing_t BackupTask::makeBufferDefault(const std::string& path)
 {
     if (path.empty()) writeLog("Enabled LIST mode");
+    Listing_t ret;
 
     std::string line;
     std::istream& istream = _ftp->beginList();
@@ -354,23 +358,29 @@ void BackupTask::makeBufferDefault(const std::string& path)
         if (testIgnore(Data::Ignore::AttributeExt, App::lastToken(line, '.')))
             continue; // skip file by extension
 
-        std::string modify;
-        if (_ftp->hasFeature(FtpClient::MDTM))
-            _ftp->sendCommand("MDTM", line, modify);
-        else
-            modify = _timePoint;
+        // Create empty entries
+        ret.push_back(_site->createFile(
+            path + Poco::Path::separator() + line, _timePoint, false));
+    }
+    _ftp->endList();
 
-        bool isdir = false;
-        try {
+    // REtrive attributes
+    for (Listing_t::iterator it = ret.begin(), end = ret.end(); it != end; ++it)
+    {
+        Data::File::Ptr_t file = *it;
+        line = App::lastToken(file->fullName, Poco::Path::separator());
+
+        try { // if not dir then exception throws
             _ftp->setWorkingDirectory(line);
-            isdir = true;
+            file->isDirectory = true;
             _ftp->cdup();
         } catch (...) { }
 
-        _buffer.push_back(_site->createFile(
-            path + Poco::Path::separator() + line, modify, isdir));
+        // Get modify date attribute if availible
+        if (!file->isDirectory && _ftp->hasFeature(FtpClient::MDTM))
+            _ftp->sendCommand("MDTM", line, file->modifyDate);
     }
-    _ftp->endList();
+    return ret;
 }
 
 bool BackupTask::testIgnore(Data::Ignore::Attribute attr, const std::string& value)

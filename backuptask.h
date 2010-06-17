@@ -23,11 +23,11 @@ public:
 private:
     bool processBatch();
 
-    typedef std::list<Data::File::Ptr_t> Output_t;
-    void listFtpFiles(Output_t& files, const std::string& path = "",
+    typedef std::list<Data::File::Ptr_t> Listing_t;
+    void listFtpFiles(Listing_t& files, const std::string& path = "",
                       bool stopOnFail = false);
-    void makeBufferMLSD(const std::string& path);
-    void makeBufferDefault(const std::string& path);
+    Listing_t makeBufferMLSD(const std::string& path);
+    Listing_t makeBufferDefault(const std::string& path);
 
     bool testIgnore(Data::Ignore::Attribute attr, const std::string& value);
 
@@ -35,7 +35,7 @@ private:
     void writeLog(const std::string& msg, const Poco::Any& arg);
 
     void reconnect();
-
+    
     static std::string backupDir();
 
 private:
@@ -45,7 +45,6 @@ private:
     Data::Site::Ptr_t _site;
     std::vector<std::set<std::string> > _ignoreOperands;
     StrListPtr_t _batch;
-    Data::File::List_t _buffer;
     std::string _timePoint;
 };
 
