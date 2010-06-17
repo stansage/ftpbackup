@@ -25,4 +25,5 @@ HEADERS += data.h \
     main.h \
     ftpclient.h \
     singleton.h
-OTHER_FILES += README
+OTHER_FILES += README \
+    config.properties

@@ -155,6 +155,6 @@ BackupTask::FtpClient *BackupTask::FtpClient::createConnect()
 
     FtpClient *ret = new FtpClient(host, port);
     if (timeout)
-        ret->setTimeout(timeout);
+        ret->setTimeout(Poco::Timespan(timeout, 0));
     return ret;
 }
