@@ -315,10 +315,7 @@ BackupTask::Listing_t BackupTask::makeBufferMLSD(const std::string& path)
         if (!tok.count()) continue;
         // File name allways last token
         const std::string& fname = tok[tok.count() - 1];
-        if (('.' == fname[0]) &&  // fname == "." || fname == ".."
-            ((1 == fname.size()) ||
-                (2 == fname.size() &&
-                    '.' == fname[1]))) continue;
+        if ("." == fname || ".." == fname) continue;
         if (testIgnore(Data::Ignore::AttributeExt, App::lastToken(fname, '.')))
             continue;
 
@@ -350,9 +347,9 @@ BackupTask::Listing_t BackupTask::makeBufferDefault(const std::string& path)
     std::string line;
     std::istream& istream = _ftp->beginList();
     while (std::getline(istream, line)) {
-        if (line.empty() || (('.' == line[0]) && ((1 == line.size())
-            || (2 == line.size() && '.' == line[1]))))
-            continue; // line = "" || line == "." || line == ".."
+        line = App::lastToken(line, Poco::Path::separator());
+        if (line.empty() || "." == line || ".." == line)
+            continue;
         if ('\r' == *line.rbegin() || '\n' == *line.rbegin())
             line.resize(line.size() - 1); // trim end
         if (testIgnore(Data::Ignore::AttributeExt, App::lastToken(line, '.')))
